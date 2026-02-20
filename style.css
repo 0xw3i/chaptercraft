@@ -436,4 +436,107 @@ body{
     right: 12px;
     bottom: 68px; /* sits above the bottom export bar */
   }
+
+}
+/* =========================
+   MOBILE FIX: Header + Input
+   ========================= */
+
+/* Small phones */
+@media (max-width: 520px){
+
+  /* Make header stack vertically */
+  .topbar{
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  /* Brand row: allow wrapping but keep neat */
+  .brand{
+    width: 100%;
+  }
+
+  /* Progress takes full width */
+  .header-progress{
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+
+  /* Actions become a clean grid */
+  .top-actions{
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  /* Project name should not overflow */
+  #projectName{
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Theme + Tools stay on one row */
+  #themeToggle,
+  #btnTools{
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /* Tools menu should not go off-screen */
+  .menu{
+    width: auto;
+  }
+  .menu-pop{
+    right: 0;
+    left: auto;
+    min-width: 220px;
+    max-width: calc(100vw - 24px);
+  }
+
+  /* Input panel buttons wrap nicely */
+  .panel-head{
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .panel-tools{
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .panel-tools .btn,
+  .panel-tools label.btn{
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  /* Toolbar: stack search/filter/nav cleanly */
+  .toolbar{
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .toolbar .input,
+  .toolbar select,
+  .toolbar .btn{
+    width: 100%;
+  }
+
+  /* Checkboxes area: keep clean spacing */
+  .meta{
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .hint{
+    margin-left: 0;
+  }
+}
+
+/* Improve iPhone safe area for bottom bar */
+.bottombar{
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
 }
