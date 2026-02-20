@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Web Novel Translator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">📘</div>
+    <div>
+      <div class="title">Web Novel Translator</div>
+      <div class="subtitle">Client-side • Fast workflow • Safe backups</div>
+    </div>
+  </div>
+
+  <div class="header-progress" title="Progress">
+    <div class="hp-text" id="progressTextTop">0 / 0 (0%)</div>
+    <div class="hp-bar"><div class="hp-fill" id="progressFillTop"></div></div>
+  </div>
+
+  <div class="top-actions">
+    <input id="projectName" class="input" placeholder="Project name (e.g., Novel-Ch12)">
+    <button class="btn" id="themeToggle" title="Toggle theme">🌙</button>
+
+    <div class="menu">
+      <button class="btn" id="btnTools" aria-haspopup="true" aria-expanded="false">Tools ▾</button>
+      <div class="menu-pop" id="toolsMenu" aria-hidden="true">
+        <button class="menu-item" id="btnGlossary">Glossary (Ctrl+G)</button>
+        <button class="menu-item" id="btnBackups">Backups</button>
+        <button class="menu-item" id="btnCheck">Consistency Check</button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" id="btnExportProject">Export Project</button>
+        <button class="menu-item" id="btnImportProject">Import Project</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Input</h2>
+      <div class="panel-tools">
+        <label class="btn ghost">
+          Upload .txt
+          <input type="file" id="fileInput" hidden accept=".txt">
+        </label>
+        <button class="btn" id="btnSplit">Split Paragraphs</button>
+        <button class="btn danger" id="btnClearAll">Clear</button>
+      </div>
+    </div>
+
+    <textarea id="rawText" class="textarea" placeholder="Paste web novel text here...
+
+Tip: Use a blank line between paragraphs."></textarea>
+
+    <div class="toolbar">
+      <input id="searchBox" class="input grow" placeholder="Search (Ctrl+F)…">
+      <select id="filterMode" class="input">
+        <option value="untranslated">Untranslated</option>
+        <option value="all">All</option>
+        <option value="done">Done</option>
+        <option value="skipped">Skipped</option>
+        <option value="dialogue">Dialogue</option>
+      </select>
+
+      <button class="btn" id="btnPrev" title="Prev (Alt+↑)">← Prev</button>
+      <button class="btn" id="btnNext" title="Next (Alt+↓)">Next →</button>
+
+      <button class="btn" id="btnFocus" title="Focus mode">Focus</button>
+    </div>
+
+    <div class="meta">
+      <label class="toggle"><input type="checkbox" id="toggleDialogueTools" checked> Dialogue highlight + chips</label>
+      <label class="toggle"><input type="checkbox" id="toggleAutoAdvance" checked> Auto-advance after Done/Skip</label>
+      <label class="toggle"><input type="checkbox" id="toggleAutoBackup" checked> Auto-backup snapshots</label>
+      <label class="toggle"><input type="checkbox" id="toggleChipInsertsOriginal"> Dialogue chip inserts original (default: empty quotes)</label>
+      <div class="hint">Shortcuts: Ctrl+Enter Done • Alt+↑/↓ Next/Prev • Ctrl+S Export • Ctrl+G Glossary</div>
+    </div>
+  </section>
+
+  <section id="paragraphs" class="paragraphs"></section>
+
+</main>
+
+<footer class="bottombar">
+  <button class="btn" id="btnExportReview">Export Review</button>
+  <button class="btn primary" id="btnExportTxt">Export .txt</button>
+</footer>
+
+<!-- Glossary Drawer -->
+<div class="drawer" id="drawerGlossary" aria-hidden="true">
+  <div class="drawer-card">
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-title">Glossary</div>
+        <div class="drawer-sub">Keep names/terms consistent (client-side only)</div>
+      </div>
+      <button class="btn" id="btnCloseGlossary">✕</button>
+    </div>
+
+    <div class="drawer-body">
+      <div class="row">
+        <input id="glossKey" class="input grow" placeholder="Original term (e.g., Zhao Yun)">
+        <input id="glossVal" class="input grow" placeholder="Your translation (e.g., ဇောင်ယန်)">
+        <button class="btn primary" id="btnAddGloss">Add</button>
+      </div>
+
+      <div class="row">
+        <input id="glossSearch" class="input grow" placeholder="Search glossary…">
+        <button class="btn" id="btnExportGlossary">Export</button>
+        <button class="btn" id="btnImportGlossary">Import</button>
+        <button class="btn danger" id="btnClearGlossary">Clear</button>
+      </div>
+
+      <div class="list" id="glossList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Backups Drawer -->
+<div class="drawer" id="drawerBackups" aria-hidden="true">
+  <div class="drawer-card">
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-title">Backups</div>
+        <div class="drawer-sub">Rolling snapshots stored in your browser</div>
+      </div>
+      <button class="btn" id="btnCloseBackups">✕</button>
+    </div>
+
+    <div class="drawer-body">
+      <div class="row">
+        <button class="btn" id="btnMakeBackup">Create snapshot now</button>
+        <button class="btn" id="btnDownloadProjectJson">Download project JSON</button>
+      </div>
+      <div class="list" id="backupList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Check Drawer -->
+<div class="drawer" id="drawerCheck" aria-hidden="true">
+  <div class="drawer-card">
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-title">Consistency Check</div>
+        <div class="drawer-sub">Quick scan before exporting</div>
+      </div>
+      <button class="btn" id="btnCloseCheck">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="list" id="checkReport"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Segment Modal -->
+<div class="drawer" id="drawerSegment" aria-hidden="true">
+  <div class="drawer-card">
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-title">Segment Mode</div>
+        <div class="drawer-sub">Translate line/sentence-by-line, then merge</div>
+      </div>
+      <button class="btn" id="btnCloseSegment">✕</button>
+    </div>
+    <div class="drawer-body" id="segmentBody"></div>
+  </div>
+</div>
+
+<input type="file" id="hiddenProjectImport" hidden accept=".json">
+<input type="file" id="hiddenGlossaryImport" hidden accept=".json">
+<!-- Back to Top (appears after scrolling) -->
+<button id="backToTop" class="back-to-top" aria-hidden="true" title="Back to top">
+  ↑
+</button>
+<script src="script.js"></script>
+</body>
+</html>
