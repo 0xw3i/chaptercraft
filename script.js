@@ -1,1024 +1,907 @@
-/* ChapterCraft — Combined Desktop + Mobile
-   - Desktop: cards + glossary + backups + filters + focus
-   - Mobile: single paragraph flow (clean)
-   - Same data model for both
+/* ChapterCraft — Production Translator Workspace
+   - Focus-first workflow
+   - Keyboard-safe bottom bar (iOS/Android) via visualViewport => --kb
+   - Modern Jump sheet (no prompt)
+   - List pagination for performance
+   - Progress counts skipped as completed (toggleable)
+   - Schema-versioned import/export
 */
 
-const STORAGE_KEY = "chaptercraft_combined_v1";
-const PAGE_SIZE = 40;
-const MAX_BACKUPS = 12;
-const AUTO_BACKUP_MS = 2 * 60 * 1000;
+const STORAGE_KEY = "cc_workspace_prod_v1";
+const SCHEMA_VERSION = 1;
 
-// ---------- Elements ----------
-const setupPanel = document.getElementById("setupPanel");
+const LIST_PAGE_SIZE = 25;
 
-const desktopScreen = document.getElementById("desktopScreen");
-const mobileScreen = document.getElementById("mobileScreen");
-
-const modeToggle = document.getElementById("modeToggle");
-const themeToggle = document.getElementById("themeToggle");
-
-const btnTools = document.getElementById("btnTools");
-const toolsMenu = document.getElementById("toolsMenu");
-const btnGlossary = document.getElementById("btnGlossary");
-const btnBackups = document.getElementById("btnBackups");
-const btnCheck = document.getElementById("btnCheck");
-const btnExportProject = document.getElementById("btnExportProject");
-const btnImportProject = document.getElementById("btnImportProject");
-const hiddenProjectImport = document.getElementById("hiddenProjectImport");
-
-const progressTextTopEl = document.getElementById("progressTextTop");
-const progressFillTopEl = document.getElementById("progressFillTop");
-
-const fileInput = document.getElementById("fileInput");
-const btnSplit = document.getElementById("btnSplit");
-const btnClearAll = document.getElementById("btnClearAll");
-
-const projectNameEl = document.getElementById("projectName");
-const chapterNameEl = document.getElementById("chapterName");
-const rawTextEl = document.getElementById("rawText");
-
-const toggleAutoAdvanceEl = document.getElementById("toggleAutoAdvance");
-const toggleDialogueToolsEl = document.getElementById("toggleDialogueTools");
-const toggleAutoBackupEl = document.getElementById("toggleAutoBackup");
-
-const searchBoxEl = document.getElementById("searchBox");
-const filterModeEl = document.getElementById("filterMode");
-const btnPrev = document.getElementById("btnPrev");
-const btnNext = document.getElementById("btnNext");
-const btnFocus = document.getElementById("btnFocus");
-const btnExportTxt = document.getElementById("btnExportTxt");
-const btnExportReview = document.getElementById("btnExportReview");
-const paragraphsDiv = document.getElementById("paragraphs");
-
-const mOriginal = document.getElementById("mOriginal");
-const mTranslation = document.getElementById("mTranslation");
-const mPrev = document.getElementById("mPrev");
-const mNext = document.getElementById("mNext");
-const mDone = document.getElementById("mDone");
-const mSkip = document.getElementById("mSkip");
-const mExport = document.getElementById("mExport");
-const mGoSetup = document.getElementById("mGoSetup");
-
-const backToTopBtn = document.getElementById("backToTop");
-
-// drawers
-const drawerGlossary = document.getElementById("drawerGlossary");
-const btnCloseGlossary = document.getElementById("btnCloseGlossary");
-const glossKeyEl = document.getElementById("glossKey");
-const glossValEl = document.getElementById("glossVal");
-const btnAddGloss = document.getElementById("btnAddGloss");
-const glossSearchEl = document.getElementById("glossSearch");
-const glossListEl = document.getElementById("glossList");
-const btnExportGlossary = document.getElementById("btnExportGlossary");
-const btnImportGlossary = document.getElementById("btnImportGlossary");
-const btnClearGlossary = document.getElementById("btnClearGlossary");
-const hiddenGlossaryImport = document.getElementById("hiddenGlossaryImport");
-
-const drawerBackups = document.getElementById("drawerBackups");
-const btnCloseBackups = document.getElementById("btnCloseBackups");
-const backupListEl = document.getElementById("backupList");
-const btnMakeBackup = document.getElementById("btnMakeBackup");
-const btnDownloadProjectJson = document.getElementById("btnDownloadProjectJson");
-
-const drawerCheck = document.getElementById("drawerCheck");
-const btnCloseCheck = document.getElementById("btnCloseCheck");
-const checkReportEl = document.getElementById("checkReport");
-
-// ---------- State ----------
-let visibleCount = PAGE_SIZE;
-let focusMode = false;
-
-// mode: "auto" | "desktop" | "mobile"
-let modePref = "auto";
-let currentIndex = 0;
-
-let model = {
-  theme: "dark",
-  projectName: "",
-  chapterName: "",
-  rawText: "",
-  ui: {
-    autoAdvance: true,
-    dialogueTools: true,
-    autoBackup: true
+const state = {
+  schemaVersion: SCHEMA_VERSION,
+  view: "focus", // focus | list
+  prefs: {
+    theme: "dark",       // dark | light
+    autoFocus: true,
+    countSkipped: true,
+    editorSize: 17
   },
-  glossary: {},
-  backups: [],
-  paragraphs: [] // { original, translation, done, skipped }
+  project: {
+    projectName: "",
+    fileName: "",
+    splitMode: "blanklines", // blanklines | lines
+    createdAt: "",
+    updatedAt: "",
+    paragraphs: [],
+    translations: [],
+    skipped: []
+  },
+  focusIndex: 0,
+  list: {
+    cursor: 0
+  },
+  _saveTimer: null
+};
+
+// ---------- DOM ----------
+const $ = (id) => document.getElementById(id);
+
+const el = {
+  projectMeta: $("projectMeta"),
+  setupChip: $("setupChip"),
+
+  progressFill: $("progressFill"),
+  progressText: $("progressText"),
+  saveStatus: $("saveStatus"),
+
+  btnToggleView: $("btnToggleView"),
+  viewLabel: $("viewLabel"),
+  btnOpenTools: $("btnOpenTools"),
+  btnCloseTools: $("btnCloseTools"),
+  toolsDrawer: $("toolsDrawer"),
+  drawerBackdrop: $("drawerBackdrop"),
+
+  // setup
+  projectName: $("projectName"),
+  fileName: $("fileName"),
+  splitMode: $("splitMode"),
+  fontSize: $("fontSize"),
+  rawText: $("rawText"),
+  btnLoad: $("btnLoad"),
+  btnClearSetup: $("btnClearSetup"),
+
+  // focus
+  focusView: $("focusView"),
+  listView: $("listView"),
+  focusIndex: $("focusIndex"),
+  pillStatus: $("pillStatus"),
+  focusOriginal: $("focusOriginal"),
+  focusEditor: $("focusEditor"),
+  btnClearOne: $("btnClearOne"),
+  btnSkipOne: $("btnSkipOne"),
+  btnCopyOriginal: $("btnCopyOriginal"),
+  btnCopyTranslation: $("btnCopyTranslation"),
+
+  // bottom bar
+  btnPrev: $("btnPrev"),
+  btnNext: $("btnNext"),
+  btnJump: $("btnJump"),
+  btnNextUntranslated: $("btnNextUntranslated"),
+
+  // list
+  list: $("list"),
+  search: $("search"),
+  filter: $("filter"),
+  btnLoadMore: $("btnLoadMore"),
+  listFootHint: $("listFootHint"),
+
+  // tools
+  btnExport: $("btnExport"),
+  btnImport: $("btnImport"),
+  btnReset: $("btnReset"),
+  btnTheme: $("btnTheme"),
+  autoFocus: $("autoFocus"),
+  countSkipped: $("countSkipped"),
+  btnCopyAllCompleted: $("btnCopyAllCompleted"),
+
+  // jump sheet
+  jumpSheet: $("jumpSheet"),
+  btnCloseJump: $("btnCloseJump"),
+  jumpBackdrop: $("jumpBackdrop"),
+  btnJumpCancel: $("btnJumpCancel"),
+  btnJumpGo: $("btnJumpGo"),
+  jumpInput: $("jumpInput"),
+  jumpSub: $("jumpSub"),
+
+  // to top
+  toTop: $("toTop")
 };
 
 // ---------- Utils ----------
-function safeParseJSON(text){ try { return JSON.parse(text); } catch { return null; } }
-function escapeHtml(str){
-  return (str ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-}
-function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
-function normalizeFilename(name){
-  return (name || "translation").trim().replaceAll(/[\\/:*?"<>|]/g, "-").slice(0, 140) || "translation";
-}
-function downloadText(text, filename){
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-}
-function downloadJSON(obj, filename){
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-}
-async function copyToClipboard(text){ try{ await navigator.clipboard.writeText(text); }catch{} }
-
-function openDrawer(el){ el.setAttribute("aria-hidden","false"); }
-function closeDrawer(el){ el.setAttribute("aria-hidden","true"); }
-function drawerClickOutsideToClose(drawer){
-  drawer.addEventListener("click", (e) => { if (e.target === drawer) closeDrawer(drawer); });
+function nowISO(){ return new Date().toISOString(); }
+function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+function isLoaded(){
+  return !!(state.project.projectName && state.project.fileName && state.project.paragraphs.length);
 }
 
-// ---------- Theme ----------
-function applyTheme(theme){
-  model.theme = (theme === "light") ? "light" : "dark";
-  document.documentElement.setAttribute("data-theme", model.theme);
-  themeToggle.textContent = model.theme === "light" ? "☀️" : "🌙";
+function applyTheme(){
+  document.documentElement.dataset.theme = state.prefs.theme === "light" ? "light" : "dark";
+}
+function applyEditorSize(){
+  document.documentElement.style.setProperty("--editor-size", `${state.prefs.editorSize}px`);
 }
 
-// ---------- Dialogue highlighting ----------
-const QUOTE_PAIRS = [
-  ['"', '"'], ['“','”'], ["'","'"], ['‘','’'], ['`','`'],
-  ['«','»'], ['「','」'], ['『','』']
-];
+function setStatus(text){
+  el.saveStatus.textContent = text;
+}
 
-function highlightDialogues(text){
-  let safe = escapeHtml(text || "");
+function markDirty(reason){
+  // non-blocking feedback, avoids alert spam
+  if (reason) setStatus(reason);
+  if (state._saveTimer) clearTimeout(state._saveTimer);
+  setStatus("Saving…");
+  state._saveTimer = setTimeout(() => {
+    saveToStorage();
+    setStatus("Saved ✓");
+  }, 250);
+}
 
-  for (const [L,R] of QUOTE_PAIRS){
-    const l = escapeRegExp(escapeHtml(L));
-    const r = escapeRegExp(escapeHtml(R));
-    const re = new RegExp(`${l}([\\s\\S]*?)${r}`, "g");
-    safe = safe.replace(re, (m, p1) => `${escapeHtml(L)}<span class="dialogue">${escapeHtml(p1)}</span>${escapeHtml(R)}`);
+function splitParagraphs(text, mode){
+  const raw = (text || "").replace(/\r\n/g, "\n").trim();
+  if (!raw) return [];
+  if (mode === "lines"){
+    return raw.split("\n").map(s => s.trim()).filter(Boolean);
   }
-
-  safe = safe.replace(/^(\s*[-—–]\s+)(.+)$/gm, (m, prefix, rest) => {
-    return `${escapeHtml(prefix)}<span class="dialogue">${escapeHtml(rest)}</span>`;
-  });
-
-  return safe;
+  return raw.split(/\n\s*\n+/g).map(s => s.trim()).filter(Boolean);
 }
 
-function hasDialogue(text){
-  const t = text || "";
-  if (/^\s*[-—–]\s+/m.test(t)) return true;
-  for (const [L,R] of QUOTE_PAIRS){
-    if (t.includes(L) && t.includes(R)) return true;
+function ensureArrays(){
+  const n = state.project.paragraphs.length;
+  state.project.translations = state.project.translations || [];
+  state.project.skipped = state.project.skipped || [];
+  state.project.translations.length = n;
+  state.project.skipped.length = n;
+
+  for (let i=0;i<n;i++){
+    if (typeof state.project.translations[i] !== "string") state.project.translations[i] = "";
+    if (typeof state.project.skipped[i] !== "boolean") state.project.skipped[i] = false;
   }
-  return false;
 }
 
-// ---------- Progress ----------
-function statusOf(p){
-  if (p.skipped) return "skipped";
-  if (p.done || ((p.translation||"").trim().length > 0)) return "done";
-  return "untranslated";
+// Completion definition (CEO decision default: count skipped)
+function isCompleted(i){
+  const t = (state.project.translations[i] || "").trim();
+  const s = !!state.project.skipped[i];
+  return state.prefs.countSkipped ? (t.length > 0 || s) : (t.length > 0);
+}
+
+function statusForIndex(i){
+  if (!state.project.paragraphs.length) return "untranslated";
+  if (state.project.skipped[i]) return "skipped";
+  const t = (state.project.translations[i] || "").trim();
+  return t ? "done" : "untranslated";
+}
+
+function doneCount(){
+  let d = 0;
+  for (let i=0;i<state.project.paragraphs.length;i++){
+    if (isCompleted(i)) d++;
+  }
+  return d;
+}
+
+function updateMeta(){
+  if (!isLoaded()){
+    el.projectMeta.textContent = "No project";
+    el.setupChip.textContent = "Not loaded";
+    return;
+  }
+  el.projectMeta.textContent = `${state.project.projectName} • ${state.project.fileName}`;
+  el.setupChip.textContent = `Loaded • ${state.project.paragraphs.length} segments`;
 }
 
 function updateProgress(){
-  const total = model.paragraphs.length;
-  const done = model.paragraphs.filter(p => !p.skipped && ((p.translation||"").trim().length > 0 || p.done)).length;
-  const pct = total ? Math.round((done/total)*100) : 0;
-  progressTextTopEl.textContent = `${done} / ${total} (${pct}%)`;
-  progressFillTopEl.style.width = `${pct}%`;
+  const total = state.project.paragraphs.length || 0;
+  if (!total){
+    el.progressFill.style.width = "0%";
+    el.progressText.textContent = "0 / 0 (0%)";
+    el.progressFill.parentElement?.setAttribute("aria-valuenow", "0");
+    return;
+  }
+  const done = doneCount();
+  const pct = Math.round((done / total) * 100);
+  el.progressFill.style.width = `${pct}%`;
+  el.progressText.textContent = `${done} / ${total} (${pct}%)`;
+  el.progressFill.parentElement?.setAttribute("aria-valuenow", String(pct));
 }
 
-// ---------- Persistence ----------
-function saveState(){
-  model.projectName = projectNameEl.value || "";
-  model.chapterName = chapterNameEl.value || "";
-  model.rawText = rawTextEl.value || "";
-  model.ui.autoAdvance = !!toggleAutoAdvanceEl.checked;
-  model.ui.dialogueTools = !!toggleDialogueToolsEl.checked;
-  model.ui.autoBackup = !!toggleAutoBackupEl.checked;
+function setPill(status){
+  el.pillStatus.className = "pill";
+  if (status === "done"){
+    el.pillStatus.classList.add("pill--done");
+    el.pillStatus.textContent = "done";
+  } else if (status === "skipped"){
+    el.pillStatus.classList.add("pill--skip");
+    el.pillStatus.textContent = "skipped";
+  } else {
+    el.pillStatus.textContent = "untranslated";
+  }
+}
 
-  const payload = {
-    ...model,
-    modePref,
-    currentIndex,
-    focusMode,
-    visibleCount
+// ---------- Storage / migration ----------
+function migrateIfNeeded(parsed){
+  // Future-proof: handle schema upgrades here
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const v = Number(parsed.schemaVersion || 0);
+  if (v === SCHEMA_VERSION) return parsed;
+
+  // Very safe fallback for unknown versions:
+  // keep project + prefs if present; reset others.
+  const safe = {
+    schemaVersion: SCHEMA_VERSION,
+    view: "focus",
+    prefs: {
+      theme: parsed.prefs?.theme === "light" ? "light" : "dark",
+      autoFocus: !!parsed.prefs?.autoFocus,
+      countSkipped: parsed.prefs?.countSkipped !== false,
+      editorSize: Number(parsed.prefs?.editorSize || 17)
+    },
+    project: parsed.project || state.project,
+    focusIndex: Number(parsed.focusIndex || 0),
+    list: { cursor: 0 }
   };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  return safe;
 }
 
-function loadState(){
-  const data = localStorage.getItem(STORAGE_KEY);
-  if (!data){
-    applyTheme("dark");
-    return;
-  }
-  const parsed = safeParseJSON(data);
-  if (!parsed){
-    applyTheme("dark");
-    return;
-  }
-
-  model = { ...model, ...parsed };
-  modePref = parsed.modePref || "auto";
-  currentIndex = Number.isInteger(parsed.currentIndex) ? parsed.currentIndex : 0;
-  focusMode = !!parsed.focusMode;
-  visibleCount = Number.isInteger(parsed.visibleCount) ? parsed.visibleCount : PAGE_SIZE;
-
-  applyTheme(model.theme || "dark");
-  projectNameEl.value = model.projectName || "";
-  chapterNameEl.value = model.chapterName || "";
-  rawTextEl.value = model.rawText || "";
-
-  toggleAutoAdvanceEl.checked = !!(model.ui?.autoAdvance ?? true);
-  toggleDialogueToolsEl.checked = !!(model.ui?.dialogueTools ?? true);
-  toggleAutoBackupEl.checked = !!(model.ui?.autoBackup ?? true);
-
-  if (!Array.isArray(model.paragraphs)) model.paragraphs = [];
-  if (!Array.isArray(model.backups)) model.backups = [];
-  if (!model.glossary || typeof model.glossary !== "object") model.glossary = {};
-
+function saveToStorage(){
+  state.schemaVersion = SCHEMA_VERSION;
+  state.project.updatedAt = nowISO();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  updateMeta();
   updateProgress();
 }
 
-// ---------- Mode resolution ----------
-function isMobileWidth(){ return window.matchMedia("(max-width: 820px)").matches; }
+function loadFromStorage(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return false;
+  try{
+    const parsed = JSON.parse(raw);
+    const migrated = migrateIfNeeded(parsed);
+    if (!migrated) return false;
 
-function resolvedMode(){
-  if (modePref === "desktop") return "desktop";
-  if (modePref === "mobile") return "mobile";
-  return isMobileWidth() ? "mobile" : "desktop";
-}
-
-function setModeButtonLabel(){
-  const r = resolvedMode();
-  const suffix = (modePref === "auto") ? "Auto" : (modePref === "desktop" ? "Desktop" : "Mobile");
-  modeToggle.textContent = `Mobile: ${suffix}${r === "mobile" ? " ✓" : ""}`;
-}
-
-// ---------- Tools menu ----------
-function openToolsMenu(){
-  toolsMenu.setAttribute("aria-hidden","false");
-  btnTools.setAttribute("aria-expanded","true");
-}
-function closeToolsMenu(){
-  toolsMenu.setAttribute("aria-hidden","true");
-  btnTools.setAttribute("aria-expanded","false");
-}
-function toggleToolsMenu(){
-  const open = toolsMenu.getAttribute("aria-hidden") === "false";
-  if (open) closeToolsMenu(); else openToolsMenu();
-}
-document.addEventListener("click", (e) => {
-  if (!btnTools.contains(e.target) && !toolsMenu.contains(e.target)) closeToolsMenu();
-});
-
-// ---------- Export ----------
-function buildExportFilename(){
-  const p = (projectNameEl.value || "").trim();
-  const c = (chapterNameEl.value || "").trim();
-  if (!p || !c) return null;
-  return `${normalizeFilename(p)} - ${normalizeFilename(c)}.txt`;
-}
-
-function exportTranslationOnly(){
-  return model.paragraphs
-    .filter(p => !p.skipped)
-    .map(p => (p.translation || "").trim())
-    .join("\n\n")
-    .trim();
-}
-
-function exportReviewFormat(){
-  return model.paragraphs
-    .filter(p => !p.skipped)
-    .map(p => {
-      const o = (p.original || "").trim();
-      const t = (p.translation || "").trim();
-      return `--- ORIGINAL ---\n${o}\n\n--- TRANSLATION ---\n${t}\n`;
-    })
-    .join("\n\n")
-    .trim();
-}
-
-// ---------- Desktop render ----------
-function matchesSearch(p, q){
-  if (!q) return true;
-  const hay = ((p.original||"") + "\n" + (p.translation||"")).toLowerCase();
-  return hay.includes(q.toLowerCase());
-}
-function matchesFilter(p, f){
-  if (f === "all") return true;
-  if (f === "dialogue") return hasDialogue(p.original||"");
-  return statusOf(p) === f;
-}
-function matchingIndexes(){
-  const q = (searchBoxEl.value || "").trim();
-  const f = filterModeEl.value || "untranslated";
-  const out = [];
-  for (let i=0;i<model.paragraphs.length;i++){
-    const p = model.paragraphs[i];
-    if (!matchesSearch(p, q)) continue;
-    if (!matchesFilter(p, f)) continue;
-    out.push(i);
+    // Apply into state
+    Object.assign(state, migrated);
+    if (!state.prefs) state.prefs = { theme:"dark", autoFocus:true, countSkipped:true, editorSize:17 };
+    if (!state.project) state.project = { projectName:"", fileName:"", splitMode:"blanklines", createdAt:"", updatedAt:"", paragraphs:[], translations:[], skipped:[] };
+    if (!state.list) state.list = { cursor: 0 };
+    ensureArrays();
+    return true;
+  }catch{
+    return false;
   }
-  return out;
-}
-function nextIndexFrom(current, dir=+1){
-  const idxs = matchingIndexes();
-  if (!idxs.length) return -1;
-  const pos = idxs.indexOf(current);
-  let start = (pos === -1) ? (dir > 0 ? 0 : idxs.length - 1) : (pos + dir);
-  for (let k=start; k>=0 && k<idxs.length; k+=dir){
-    return idxs[k];
-  }
-  return -1;
 }
 
-function glossaryMatchesForOriginal(original){
-  const o = original || "";
-  const keys = Object.keys(model.glossary || {});
-  const matches = [];
-  for (const k of keys){
-    if (k && o.includes(k)) matches.push({k, v: model.glossary[k]});
-  }
-  matches.sort((a,b) => b.k.length - a.k.length);
-  return matches.slice(0, 10);
-}
-function insertAtCursor(textarea, text){
-  const start = textarea.selectionStart ?? textarea.value.length;
-  const end = textarea.selectionEnd ?? textarea.value.length;
-  textarea.value = textarea.value.substring(0, start) + text + textarea.value.substring(end);
-  const pos = start + text.length;
-  textarea.selectionStart = textarea.selectionEnd = pos;
-}
-
-function renderGlossaryInlineChips(card, p){
-  const matches = glossaryMatchesForOriginal(p.original || "");
-  if (!matches.length) return;
-
-  const row = document.createElement("div");
-  row.className = "chips";
-
-  const ta = card.querySelector("textarea.main-translation");
-  for (const m of matches){
-    const chip = document.createElement("div");
-    chip.className = "chip";
-    chip.textContent = `${m.k} → ${m.v}`;
-    chip.onclick = () => {
-      insertAtCursor(ta, m.v);
-      p.translation = ta.value;
-      p.skipped = false;
-      saveState();
-      updateProgress();
-      ta.focus();
-      refreshBadge(card, p);
-    };
-    row.appendChild(chip);
-  }
-
-  card.querySelector(".pane.translation").appendChild(row);
-}
-
-function refreshBadge(card, p){
-  const badge = card.querySelectorAll(".badge")[1];
-  const st = statusOf(p);
-  badge.textContent = st === "done" ? "✅ done" : st === "skipped" ? "⏭ skipped" : "… untranslated";
-  badge.className = `badge ${st === "done" ? "good" : ""}`;
-}
-
-function renderCard(idx){
-  const p = model.paragraphs[idx];
-  const st = statusOf(p);
-
-  const card = document.createElement("div");
-  card.className = "card";
-  card.dataset.idx = idx;
-
-  card.innerHTML = `
-    <div class="card-head">
-      <div class="badge">Paragraph ${idx + 1}</div>
-      <div class="badge ${st === "done" ? "good" : ""}">${st === "done" ? "✅ done" : st === "skipped" ? "⏭ skipped" : "… untranslated"}</div>
-    </div>
-
-    <div class="card-body">
-      <div class="pane original"></div>
-      <div class="pane translation">
-        <div class="translation">
-          <textarea class="main-translation" placeholder="Translate here..."></textarea>
-        </div>
-
-        <div class="card-actions">
-          <button class="btn" data-act="done">Done</button>
-          <button class="btn danger" data-act="skip">Skip</button>
-          <button class="btn danger" data-act="clear">Clear</button>
-          <span class="small" style="margin-left:auto">Index: ${idx+1}</span>
-        </div>
-      </div>
-    </div>
-  `;
-
-  const origPane = card.querySelector(".pane.original");
-  origPane.innerHTML = toggleDialogueToolsEl.checked ? highlightDialogues(p.original || "") : escapeHtml(p.original || "");
-
-  const ta = card.querySelector("textarea.main-translation");
-  ta.value = p.translation || "";
-
-  ta.addEventListener("focus", () => {
-    currentIndex = idx;
-    saveState();
-  });
-
-  ta.addEventListener("input", () => {
-    p.translation = ta.value;
-    if ((p.translation||"").trim().length > 0) p.skipped = false;
-    saveState();
-    updateProgress();
-    refreshBadge(card, p);
-    // keep mobile in sync if user switches
-    if (resolvedMode() === "mobile") renderMobile();
-  });
-
-  renderGlossaryInlineChips(card, p);
-
-  card.querySelector('[data-act="done"]').onclick = () => {
-    p.done = true;
-    p.skipped = false;
-    saveState();
-    updateProgress();
-    renderDesktop();
-    if (toggleAutoAdvanceEl.checked){
-      const nxt = nextIndexFrom(idx, +1);
-      if (nxt !== -1) { currentIndex = nxt; saveState(); scrollToCard(nxt); }
-    }
-  };
-
-  card.querySelector('[data-act="skip"]').onclick = () => {
-    p.skipped = true;
-    p.done = false;
-    saveState();
-    updateProgress();
-    renderDesktop();
-    if (toggleAutoAdvanceEl.checked){
-      const nxt = nextIndexFrom(idx, +1);
-      if (nxt !== -1) { currentIndex = nxt; saveState(); scrollToCard(nxt); }
-    }
-  };
-
-  card.querySelector('[data-act="clear"]').onclick = () => {
-    if (!confirm("Clear translation for this paragraph?")) return;
-    p.translation = "";
-    p.done = false;
-    p.skipped = false;
-    saveState();
-    updateProgress();
-    renderDesktop();
-    scrollToCard(idx);
-  };
-
-  return card;
-}
-
-function scrollToCard(idx){
-  const el = document.querySelector(`[data-idx="${idx}"]`);
-  if (!el) return;
-  el.scrollIntoView({behavior:"smooth", block:"center"});
-  const ta = el.querySelector("textarea");
-  if (ta) ta.focus();
-}
-
-function renderDesktop(){
-  paragraphsDiv.innerHTML = "";
-  const idxs = matchingIndexes();
-  const slice = idxs.slice(0, visibleCount);
-
-  if (focusMode){
-    const chosen = idxs.includes(currentIndex) ? currentIndex : (idxs[0] ?? -1);
-    if (chosen === -1){
-      paragraphsDiv.innerHTML = `<div class="card"><div class="card-head"><div class="badge">No match</div><div class="badge"></div></div></div>`;
-      return;
-    }
-    paragraphsDiv.appendChild(renderCard(chosen));
+// ---------- Keyboard-safe bottom bar ----------
+function updateKeyboardOffset(){
+  // Works best on mobile; safe on desktop (kb stays 0)
+  if (!window.visualViewport){
+    document.documentElement.style.setProperty("--kb", "0px");
     return;
   }
+  const vv = window.visualViewport;
+  const keyboard = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  document.documentElement.style.setProperty("--kb", `${keyboard}px`);
+}
+
+if (window.visualViewport){
+  window.visualViewport.addEventListener("resize", updateKeyboardOffset);
+  window.visualViewport.addEventListener("scroll", updateKeyboardOffset);
+}
+window.addEventListener("resize", updateKeyboardOffset);
+
+// Ensure caret not hidden when typing (extra safety)
+function ensureEditorVisible(){
+  const active = document.activeElement === el.focusEditor;
+  if (!active) return;
+
+  const rect = el.focusEditor.getBoundingClientRect();
+  const kb = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--kb")) || 0;
+
+  // bottom bar approx height
+  const barH = 74;
+  const viewportH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+
+  const safeBottom = viewportH - barH - Math.min(kb, viewportH);
+  const overlap = rect.bottom - safeBottom;
+  if (overlap > 8){
+    window.scrollBy({ top: overlap + 12, behavior: "smooth" });
+  }
+}
+
+// ---------- Drawer ----------
+function openDrawer(){
+  el.toolsDrawer.setAttribute("aria-hidden","false");
+  // trap focus lightly: focus close button
+  el.btnCloseTools.focus({ preventScroll: true });
+}
+function closeDrawer(){
+  el.toolsDrawer.setAttribute("aria-hidden","true");
+  el.btnOpenTools.focus({ preventScroll: true });
+}
+
+// ---------- Jump sheet ----------
+function openJump(){
+  if (!isLoaded()) return;
+  const total = state.project.paragraphs.length;
+  el.jumpSub.textContent = `Enter a number (1 — ${total}).`;
+  el.jumpInput.value = String(state.focusIndex + 1);
+  el.jumpSheet.setAttribute("aria-hidden","false");
+  // Focus input after opening
+  setTimeout(() => el.jumpInput.focus({ preventScroll: true }), 0);
+}
+function closeJump(){
+  el.jumpSheet.setAttribute("aria-hidden","true");
+  el.btnJump.focus({ preventScroll: true });
+}
+function jumpGo(){
+  if (!isLoaded()) return;
+  const total = state.project.paragraphs.length;
+  const n = Number((el.jumpInput.value || "").trim());
+  if (!Number.isFinite(n) || n < 1 || n > total){
+    setStatus(`Invalid index (1 — ${total})`);
+    el.jumpInput.focus();
+    return;
+  }
+  goIndex(n - 1);
+  closeJump();
+}
+
+// ---------- Clipboard ----------
+async function copyText(text){
+  try{
+    await navigator.clipboard.writeText(text);
+    setStatus("Copied ✓");
+    setTimeout(() => setStatus("Saved ✓"), 700);
+  }catch{
+    // fallback
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    setStatus("Copied ✓");
+    setTimeout(() => setStatus("Saved ✓"), 700);
+  }
+}
+
+// ---------- View + Rendering ----------
+function setView(view){
+  state.view = view;
+  el.viewLabel.textContent = view === "focus" ? "Focus" : "List";
+
+  if (view === "focus"){
+    el.listView.hidden = true;
+    el.focusView.hidden = false;
+    renderFocus();
+  } else {
+    el.focusView.hidden = true;
+    el.listView.hidden = false;
+    resetListPagination();
+    renderList(true);
+  }
+
+  // Back-to-top only in list view
+  updateTopVisibility(true);
+
+  markDirty();
+}
+
+function renderFocus(){
+  const total = state.project.paragraphs.length || 0;
+
+  if (!total){
+    el.focusIndex.textContent = "Index 0 / 0";
+    el.focusOriginal.textContent = "Paste text in setup to begin.";
+    el.focusEditor.value = "";
+    setPill("untranslated");
+    updateMeta();
+    updateProgress();
+    return;
+  }
+
+  state.focusIndex = clamp(state.focusIndex, 0, total - 1);
+
+  el.focusIndex.textContent = `Index ${state.focusIndex + 1} / ${total}`;
+  el.focusOriginal.textContent = state.project.paragraphs[state.focusIndex];
+
+  const cur = state.project.translations[state.focusIndex] || "";
+  if (el.focusEditor.value !== cur) el.focusEditor.value = cur;
+
+  setPill(statusForIndex(state.focusIndex));
+
+  updateMeta();
+  updateProgress();
+
+  if (state.prefs.autoFocus){
+    requestAnimationFrame(() => {
+      el.focusEditor.focus({ preventScroll: true });
+      ensureEditorVisible();
+    });
+  }
+}
+
+function resetListPagination(){
+  state.list.cursor = 0;
+  el.list.innerHTML = "";
+  el.listFootHint.textContent = "";
+}
+
+function passesFilters(i, q, filter){
+  const st = statusForIndex(i);
+
+  if (filter !== "all" && st !== filter) return false;
+
+  if (q){
+    const original = state.project.paragraphs[i] || "";
+    const translation = state.project.translations[i] || "";
+    const hit = original.toLowerCase().includes(q) || translation.toLowerCase().includes(q);
+    if (!hit) return false;
+  }
+  return true;
+}
+
+function renderList(reset){
+  if (!isLoaded()){
+    el.list.innerHTML = `<div class="card"><div class="hint">Load a project first.</div></div>`;
+    el.btnLoadMore.disabled = true;
+    el.listFootHint.textContent = "";
+    updateMeta();
+    updateProgress();
+    return;
+  }
+
+  el.btnLoadMore.disabled = false;
+
+  if (reset) resetListPagination();
+
+  const q = (el.search.value || "").trim().toLowerCase();
+  const filter = el.filter.value;
+  const total = state.project.paragraphs.length;
+
+  // Collect indices that match (for hint + paging)
+  const matches = [];
+  for (let i=0;i<total;i++){
+    if (passesFilters(i, q, filter)) matches.push(i);
+  }
+
+  const start = state.list.cursor;
+  const end = Math.min(matches.length, start + LIST_PAGE_SIZE);
+  const slice = matches.slice(start, end);
 
   for (const idx of slice){
-    paragraphsDiv.appendChild(renderCard(idx));
+    el.list.appendChild(renderListItem(idx));
   }
 
-  if (idxs.length > visibleCount){
-    const more = document.createElement("button");
-    more.className = "btn";
-    more.textContent = `Load more (${Math.min(PAGE_SIZE, idxs.length - visibleCount)})`;
-    more.onclick = () => { visibleCount += PAGE_SIZE; renderDesktop(); saveState(); };
-    paragraphsDiv.appendChild(more);
-  }
-}
+  state.list.cursor = end;
 
-// ---------- Mobile render ----------
-function renderMobile(){
-  const p = model.paragraphs[currentIndex];
-  if (!p){
-    mOriginal.innerHTML = `<div class="small">No paragraphs yet. Use Setup to split text.</div>`;
-    mTranslation.value = "";
+  if (matches.length === 0){
+    el.list.innerHTML = `<div class="card"><div class="hint">No matches.</div></div>`;
+    el.btnLoadMore.disabled = true;
+    el.listFootHint.textContent = "";
     return;
   }
 
-  mOriginal.innerHTML = toggleDialogueToolsEl.checked ? highlightDialogues(p.original || "") : escapeHtml(p.original || "");
-  mTranslation.value = p.translation || "";
-  updateProgress();
+  el.listFootHint.textContent = `Showing ${end} of ${matches.length} matches.`;
+  el.btnLoadMore.disabled = end >= matches.length;
 }
 
-// ---------- Glossary drawer ----------
-function glossEntries(){
-  const q = (glossSearchEl.value || "").trim().toLowerCase();
-  const items = Object.entries(model.glossary || {}).map(([k,v]) => ({k,v})).sort((a,b)=>a.k.localeCompare(b.k));
-  if (!q) return items;
-  return items.filter(it => it.k.toLowerCase().includes(q) || it.v.toLowerCase().includes(q));
-}
-function renderGlossary(){
-  glossListEl.innerHTML = "";
-  const items = glossEntries();
-  if (!items.length){
-    glossListEl.innerHTML = `<div class="item"><div class="kv"><div class="k">No glossary entries</div><div class="v">Add names/terms for consistency.</div></div></div>`;
-    return;
-  }
-  for (const it of items){
-    const row = document.createElement("div");
-    row.className = "item";
-    row.innerHTML = `
-      <div class="kv">
-        <div class="k">${escapeHtml(it.k)}</div>
-        <div class="v">${escapeHtml(it.v)}</div>
-      </div>
-      <div class="actions">
-        <button class="btn" data-act="copy">Copy</button>
-        <button class="btn danger" data-act="del">Delete</button>
-      </div>
-    `;
-    row.querySelector('[data-act="copy"]').onclick = () => copyToClipboard(it.v);
-    row.querySelector('[data-act="del"]').onclick = () => { delete model.glossary[it.k]; saveState(); renderGlossary(); renderDesktop(); renderMobile(); };
-    glossListEl.appendChild(row);
-  }
-}
+function renderListItem(i){
+  const st = statusForIndex(i);
 
-// ---------- Backups ----------
-function makeSnapshot(){
-  const snap = {
-    theme: model.theme,
-    projectName: projectNameEl.value || "",
-    chapterName: chapterNameEl.value || "",
-    ui: {
-      autoAdvance: !!toggleAutoAdvanceEl.checked,
-      dialogueTools: !!toggleDialogueToolsEl.checked,
-      autoBackup: !!toggleAutoBackupEl.checked
-    },
-    glossary: model.glossary || {},
-    rawText: rawTextEl.value || "",
-    paragraphs: model.paragraphs || [],
-    currentIndex
-  };
+  const item = document.createElement("section");
+  item.className = "item";
 
-  const ts = Date.now();
-  const size = JSON.stringify(snap).length;
-  model.backups = model.backups || [];
-  model.backups.unshift({ ts, size, snapshot: snap });
-  if (model.backups.length > MAX_BACKUPS) model.backups.length = MAX_BACKUPS;
+  const top = document.createElement("div");
+  top.className = "item__top";
 
-  saveState();
-  renderBackups();
-}
-function renderBackups(){
-  backupListEl.innerHTML = "";
-  const list = model.backups || [];
-  if (!list.length){
-    backupListEl.innerHTML = `<div class="item"><div class="kv"><div class="k">No backups</div><div class="v">Enable auto backups or make a snapshot.</div></div></div>`;
-    return;
-  }
-  for (const b of list){
-    const d = new Date(b.ts);
-    const row = document.createElement("div");
-    row.className = "item";
-    row.innerHTML = `
-      <div class="kv">
-        <div class="k">${d.toLocaleString()}</div>
-        <div class="v">Size: ${Math.round(b.size/1024)} KB</div>
-      </div>
-      <div class="actions">
-        <button class="btn" data-act="restore">Restore</button>
-        <button class="btn" data-act="download">Download</button>
-        <button class="btn danger" data-act="del">Delete</button>
-      </div>
-    `;
-    row.querySelector('[data-act="restore"]').onclick = () => {
-      if (!confirm("Restore this snapshot? Current progress will be replaced.")) return;
-      loadSnapshot(b.snapshot);
-      closeDrawer(drawerBackups);
-    };
-    row.querySelector('[data-act="download"]').onclick = () => downloadJSON(b.snapshot, `snapshot-${b.ts}.json`);
-    row.querySelector('[data-act="del"]').onclick = () => {
-      model.backups = model.backups.filter(x => x.ts !== b.ts);
-      saveState(); renderBackups();
-    };
-    backupListEl.appendChild(row);
-  }
-}
-function loadSnapshot(snap){
-  model.theme = snap.theme || "dark";
-  model.projectName = snap.projectName || "";
-  model.chapterName = snap.chapterName || "";
-  model.ui = snap.ui || model.ui;
-  model.glossary = snap.glossary || {};
-  model.rawText = snap.rawText || "";
-  model.paragraphs = Array.isArray(snap.paragraphs) ? snap.paragraphs : [];
-  currentIndex = Number.isInteger(snap.currentIndex) ? snap.currentIndex : 0;
+  const left = document.createElement("div");
+  left.className = "item__idx";
+  left.textContent = `Index ${i + 1}`;
 
-  applyTheme(model.theme);
-  projectNameEl.value = model.projectName;
-  chapterNameEl.value = model.chapterName;
-  rawTextEl.value = model.rawText;
+  const right = document.createElement("div");
+  const pill = document.createElement("span");
+  pill.className = "pill";
+  if (st === "done") pill.classList.add("pill--done");
+  if (st === "skipped") pill.classList.add("pill--skip");
+  pill.textContent = st;
+  right.appendChild(pill);
 
-  toggleAutoAdvanceEl.checked = !!(model.ui?.autoAdvance ?? true);
-  toggleDialogueToolsEl.checked = !!(model.ui?.dialogueTools ?? true);
-  toggleAutoBackupEl.checked = !!(model.ui?.autoBackup ?? true);
+  top.appendChild(left);
+  top.appendChild(right);
 
-  visibleCount = PAGE_SIZE;
-  focusMode = false;
-  saveState();
+  const cols = document.createElement("div");
+  cols.className = "item__cols";
 
-  updateProgress();
-  renderGlossary();
-  renderBackups();
-  renderUI();
-}
+  const colA = document.createElement("article");
+  colA.className = "pane";
+  colA.innerHTML = `<div class="pane__label">Original</div><div class="pane__body"></div>`;
+  colA.querySelector(".pane__body").textContent = state.project.paragraphs[i];
 
-// ---------- Check ----------
-function showCheck(){
-  const total = model.paragraphs.length;
-  const untranslated = model.paragraphs.filter(p => statusOf(p)==="untranslated").length;
-  const skipped = model.paragraphs.filter(p => p.skipped).length;
+  const colB = document.createElement("section");
+  colB.className = "pane";
+  colB.innerHTML = `<div class="pane__label">Translation</div>`;
 
-  const rows = [];
-  rows.push({ title: "Overview", body: `Total: ${total}\nUntranslated: ${untranslated}\nSkipped: ${skipped}` });
+  const ta = document.createElement("textarea");
+  ta.className = "textarea";
+  ta.placeholder = "Type translation…";
+  ta.value = state.project.translations[i] || "";
 
-  const dlgUn = [];
-  model.paragraphs.forEach((p,i)=>{ if(statusOf(p)==="untranslated" && hasDialogue(p.original||"")) dlgUn.push(i+1); });
-  if (dlgUn.length) rows.push({ title: "Untranslated dialogue", body: `Paragraphs: ${dlgUn.slice(0,80).join(", ")}${dlgUn.length>80?"…":""}` });
-
-  checkReportEl.innerHTML = "";
-  for (const r of rows){
-    const el = document.createElement("div");
-    el.className = "item";
-    el.innerHTML = `<div class="kv"><div class="k">${escapeHtml(r.title)}</div><div class="v">${escapeHtml(r.body)}</div></div>`;
-    checkReportEl.appendChild(el);
-  }
-}
-
-// ---------- UI render (mode switch) ----------
-function renderUI(){
-  const mode = resolvedMode();
-  setModeButtonLabel();
-
-  desktopScreen.classList.toggle("active", mode === "desktop");
-  mobileScreen.classList.toggle("active", mode === "mobile");
-
-  // On mobile, hide heavy desktop-only controls visually by staying in mobile screen
-  if (mode === "desktop"){
-    renderDesktop();
-  } else {
-    renderMobile();
-  }
-}
-
-// ---------- Back-to-top ----------
-function updateBackToTopVisibility(){
-  const show = window.scrollY > 600;
-  backToTopBtn.setAttribute("aria-hidden", show ? "false" : "true");
-}
-window.addEventListener("scroll", updateBackToTopVisibility, { passive:true });
-backToTopBtn.addEventListener("click", () => window.scrollTo({ top:0, behavior:"smooth" }));
-
-// ---------- Keyboard handling (mobile) ----------
-(function setupKeyboardAwareLayout(){
-  const setBottomPadding = (px) => { document.body.style.paddingBottom = px ? `${px}px` : ""; };
-  const update = () => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const keyboardPx = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    const open = keyboardPx > 120;
-    document.body.classList.toggle("kbd-open", open);
-    if (open) setBottomPadding(Math.round(keyboardPx + 24));
-    else setBottomPadding(0);
-  };
-  if (window.visualViewport){
-    window.visualViewport.addEventListener("resize", update);
-    window.visualViewport.addEventListener("scroll", update);
-  }
-  window.addEventListener("resize", update);
-  document.addEventListener("focusin", (e) => {
-    if (e.target && e.target.tagName === "TEXTAREA"){
-      setTimeout(() => { try{ e.target.scrollIntoView({behavior:"smooth", block:"center"}); }catch{} update(); }, 250);
-    }
+  ta.addEventListener("input", () => {
+    state.project.translations[i] = ta.value;
+    updateProgress();
+    markDirty();
+    // update pill immediately
+    const newSt = statusForIndex(i);
+    pill.className = "pill";
+    if (newSt === "done") pill.classList.add("pill--done");
+    if (newSt === "skipped") pill.classList.add("pill--skip");
+    pill.textContent = newSt;
   });
-  document.addEventListener("focusout", () => setTimeout(update, 120));
-  update();
-})();
 
-// ---------- Events ----------
-themeToggle.onclick = () => { applyTheme(model.theme === "light" ? "dark" : "light"); saveState(); };
+  const row = document.createElement("div");
+  row.className = "minirow";
 
-modeToggle.onclick = () => {
-  // cycle auto -> desktop -> mobile -> auto
-  modePref = (modePref === "auto") ? "desktop" : (modePref === "desktop") ? "mobile" : "auto";
-  saveState();
-  renderUI();
-};
+  const btnOpen = document.createElement("button");
+  btnOpen.className = "btn btn--ghost";
+  btnOpen.type = "button";
+  btnOpen.textContent = "Open in Focus";
+  btnOpen.addEventListener("click", () => {
+    state.focusIndex = i;
+    setView("focus");
+  });
 
-btnTools.onclick = (e) => { e.stopPropagation(); toggleToolsMenu(); };
+  const btnSkip = document.createElement("button");
+  btnSkip.className = "btn";
+  btnSkip.type = "button";
+  btnSkip.textContent = state.project.skipped[i] ? "Unskip" : "Skip";
+  btnSkip.addEventListener("click", () => {
+    state.project.skipped[i] = !state.project.skipped[i];
+    btnSkip.textContent = state.project.skipped[i] ? "Unskip" : "Skip";
+    updateProgress();
+    markDirty();
+    const newSt = statusForIndex(i);
+    pill.className = "pill";
+    if (newSt === "done") pill.classList.add("pill--done");
+    if (newSt === "skipped") pill.classList.add("pill--skip");
+    pill.textContent = newSt;
+  });
 
-btnGlossary.onclick = () => { closeToolsMenu(); openDrawer(drawerGlossary); renderGlossary(); glossKeyEl.focus(); };
-btnBackups.onclick = () => { closeToolsMenu(); openDrawer(drawerBackups); renderBackups(); };
-btnCheck.onclick = () => { closeToolsMenu(); openDrawer(drawerCheck); showCheck(); };
-btnExportProject.onclick = () => { closeToolsMenu(); downloadJSON(exportProjectPack(), `${normalizeFilename(projectNameEl.value||"project")}.project.json`); };
-btnImportProject.onclick = () => { closeToolsMenu(); hiddenProjectImport.click(); };
+  row.appendChild(btnOpen);
+  row.appendChild(btnSkip);
 
-document.addEventListener("resize", () => renderUI());
+  colB.appendChild(ta);
+  colB.appendChild(row);
 
-btnCloseGlossary.onclick = () => closeDrawer(drawerGlossary);
-btnCloseBackups.onclick = () => closeDrawer(drawerBackups);
-btnCloseCheck.onclick = () => closeDrawer(drawerCheck);
-drawerClickOutsideToClose(drawerGlossary);
-drawerClickOutsideToClose(drawerBackups);
-drawerClickOutsideToClose(drawerCheck);
+  cols.appendChild(colA);
+  cols.appendChild(colB);
 
-// Setup
-fileInput.addEventListener("change", (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => { rawTextEl.value = reader.result; saveState(); };
-  reader.readAsText(file);
+  item.appendChild(top);
+  item.appendChild(cols);
+
+  return item;
+}
+
+// ---------- Navigation ----------
+function goIndex(i){
+  const total = state.project.paragraphs.length || 0;
+  if (!total) return;
+  state.focusIndex = clamp(i, 0, total - 1);
+  renderFocus();
+  markDirty();
+}
+
+function nextUnfinished(){
+  const total = state.project.paragraphs.length || 0;
+  if (!total) return;
+
+  for (let i = state.focusIndex + 1; i < total; i++){
+    if (!isCompleted(i)){
+      goIndex(i);
+      return;
+    }
+  }
+  // wrap
+  for (let i = 0; i <= state.focusIndex; i++){
+    if (!isCompleted(i)){
+      goIndex(i);
+      return;
+    }
+  }
+  setStatus("All completed ✓");
+}
+
+// ---------- Back to top (List only) ----------
+function updateTopVisibility(forceHide){
+  if (forceHide || state.view !== "list"){
+    el.toTop.classList.remove("show");
+    el.toTop.setAttribute("aria-hidden","true");
+    return;
+  }
+  const y = window.scrollY || document.documentElement.scrollTop || 0;
+  if (y > 650){
+    el.toTop.classList.add("show");
+    el.toTop.setAttribute("aria-hidden","false");
+  } else {
+    el.toTop.classList.remove("show");
+    el.toTop.setAttribute("aria-hidden","true");
+  }
+}
+
+// ---------- Wire events ----------
+el.btnOpenTools.addEventListener("click", openDrawer);
+el.btnCloseTools.addEventListener("click", closeDrawer);
+el.drawerBackdrop.addEventListener("click", closeDrawer);
+
+el.btnToggleView.addEventListener("click", () => {
+  setView(state.view === "focus" ? "list" : "focus");
 });
 
-btnSplit.onclick = () => {
-  const project = (projectNameEl.value || "").trim();
-  const chapter = (chapterNameEl.value || "").trim();
-  const text = (rawTextEl.value || "").trim();
+el.btnLoad.addEventListener("click", () => {
+  const projectName = (el.projectName.value || "").trim();
+  const fileName = (el.fileName.value || "").trim();
+  const splitMode = el.splitMode.value;
 
-  if (!project) return alert("Project Name is required.");
-  if (!chapter) return alert("Chapter Name is required.");
-  if (!text) return alert("Paste chapter text first.");
+  if (!fileName){
+    el.fileName.focus();
+    setStatus("File name is required");
+    return;
+  }
+  if (!projectName){
+    el.projectName.focus();
+    setStatus("Project name is required");
+    return;
+  }
 
-  const parts = text.split(/\n\s*\n+/).map(x => x.trim()).filter(Boolean);
-  model.paragraphs = parts.map(p => ({ original: p, translation:"", done:false, skipped:false }));
-  currentIndex = 0;
-  visibleCount = PAGE_SIZE;
-  focusMode = false;
+  const paragraphs = splitParagraphs(el.rawText.value, splitMode);
+  if (!paragraphs.length){
+    el.rawText.focus();
+    setStatus("Paste some text first");
+    return;
+  }
 
-  saveState();
+  state.project.projectName = projectName;
+  state.project.fileName = fileName;
+  state.project.splitMode = splitMode;
+  if (!state.project.createdAt) state.project.createdAt = nowISO();
+  state.project.paragraphs = paragraphs;
+
+  // CEO decision for production: start clean per load
+  state.project.translations = new Array(paragraphs.length).fill("");
+  state.project.skipped = new Array(paragraphs.length).fill(false);
+  ensureArrays();
+
+  state.focusIndex = 0;
+  state.list.cursor = 0;
+
+  applyEditorSize();
+  updateMeta();
   updateProgress();
-  makeSnapshot();
-  renderUI();
+  setView("focus");
+  markDirty("Loaded ✓");
+});
 
-  // jump to content
-  window.scrollTo({top: 0, behavior:"smooth"});
-};
+el.btnClearSetup.addEventListener("click", () => {
+  el.projectName.value = "";
+  el.fileName.value = "";
+  el.rawText.value = "";
+  setStatus("Setup cleared");
+});
 
-btnClearAll.onclick = () => {
-  if (!confirm("Clear everything? This removes local progress.")) return;
-  const keepTheme = model.theme;
-
-  model = {
-    theme: keepTheme,
-    projectName: "",
-    chapterName: "",
-    rawText: "",
-    ui: { autoAdvance:true, dialogueTools:true, autoBackup:true },
-    glossary: {},
-    backups: [],
-    paragraphs: []
-  };
-
-  projectNameEl.value = "";
-  chapterNameEl.value = "";
-  rawTextEl.value = "";
-  searchBoxEl.value = "";
-  filterModeEl.value = "untranslated";
-
-  visibleCount = PAGE_SIZE;
-  focusMode = false;
-  currentIndex = 0;
-
-  saveState();
+el.focusEditor.addEventListener("input", () => {
+  if (!state.project.paragraphs.length) return;
+  state.project.translations[state.focusIndex] = el.focusEditor.value;
+  setPill(statusForIndex(state.focusIndex));
   updateProgress();
-  renderGlossary();
-  renderBackups();
-  renderUI();
-};
+  markDirty();
+  ensureEditorVisible();
+});
 
-// desktop controls
-searchBoxEl.addEventListener("input", () => { visibleCount = PAGE_SIZE; renderDesktop(); saveState(); });
-filterModeEl.addEventListener("change", () => { visibleCount = PAGE_SIZE; renderDesktop(); saveState(); });
+el.focusEditor.addEventListener("focus", () => {
+  // when keyboard opens, make sure visible
+  setTimeout(() => ensureEditorVisible(), 50);
+});
 
-btnPrev.onclick = () => {
-  const prv = nextIndexFrom(currentIndex, -1);
-  if (prv === -1) return alert("No previous match.");
-  currentIndex = prv; saveState();
-  if (focusMode) renderDesktop();
-  scrollToCard(prv);
-};
-
-btnNext.onclick = () => {
-  const nxt = nextIndexFrom(currentIndex, +1);
-  if (nxt === -1) return alert("No next match.");
-  currentIndex = nxt; saveState();
-  if (focusMode) renderDesktop();
-  scrollToCard(nxt);
-};
-
-btnFocus.onclick = () => {
-  focusMode = !focusMode;
-  btnFocus.textContent = focusMode ? "Focus: ON" : "Focus";
-  saveState();
-  renderDesktop();
-};
-
-btnExportTxt.onclick = () => {
-  const fn = buildExportFilename();
-  if (!fn) return alert("Project + Chapter name required for export.");
-  downloadText(exportTranslationOnly(), fn);
-};
-
-btnExportReview.onclick = () => {
-  const fn = buildExportFilename();
-  if (!fn) return alert("Project + Chapter name required for export.");
-  const name = fn.replace(/\.txt$/i, "-review.txt");
-  downloadText(exportReviewFormat(), name);
-};
-
-toggleAutoAdvanceEl.addEventListener("change", saveState);
-toggleDialogueToolsEl.addEventListener("change", () => { saveState(); renderUI(); });
-toggleAutoBackupEl.addEventListener("change", saveState);
-
-// mobile controls
-mTranslation.addEventListener("input", () => {
-  const p = model.paragraphs[currentIndex];
-  if (!p) return;
-  p.translation = mTranslation.value;
-  if ((p.translation||"").trim().length > 0) p.skipped = false;
-  saveState();
+el.btnClearOne.addEventListener("click", () => {
+  if (!state.project.paragraphs.length) return;
+  state.project.translations[state.focusIndex] = "";
+  el.focusEditor.value = "";
+  setPill(statusForIndex(state.focusIndex));
   updateProgress();
+  markDirty("Cleared");
+  if (state.prefs.autoFocus) el.focusEditor.focus({ preventScroll: true });
 });
 
-mPrev.onclick = () => { if (currentIndex > 0) { currentIndex--; saveState(); renderMobile(); } };
-mNext.onclick = () => { if (currentIndex < model.paragraphs.length - 1) { currentIndex++; saveState(); renderMobile(); } };
+el.btnSkipOne.addEventListener("click", () => {
+  if (!state.project.paragraphs.length) return;
+  state.project.skipped[state.focusIndex] = !state.project.skipped[state.focusIndex];
+  setPill(statusForIndex(state.focusIndex));
+  updateProgress();
+  markDirty(state.project.skipped[state.focusIndex] ? "Skipped" : "Unskipped");
+});
 
-mDone.onclick = () => {
-  const p = model.paragraphs[currentIndex]; if (!p) return;
-  p.done = true; p.skipped = false;
-  saveState(); updateProgress();
-  if (toggleAutoAdvanceEl.checked && currentIndex < model.paragraphs.length - 1) currentIndex++;
-  saveState(); renderMobile();
-};
+el.btnCopyOriginal.addEventListener("click", async () => {
+  if (!state.project.paragraphs.length) return;
+  await copyText(state.project.paragraphs[state.focusIndex]);
+});
+el.btnCopyTranslation.addEventListener("click", async () => {
+  if (!state.project.paragraphs.length) return;
+  await copyText(state.project.translations[state.focusIndex] || "");
+});
 
-mSkip.onclick = () => {
-  const p = model.paragraphs[currentIndex]; if (!p) return;
-  p.skipped = true; p.done = false;
-  saveState(); updateProgress();
-  if (toggleAutoAdvanceEl.checked && currentIndex < model.paragraphs.length - 1) currentIndex++;
-  saveState(); renderMobile();
-};
+el.btnPrev.addEventListener("click", () => goIndex(state.focusIndex - 1));
+el.btnNext.addEventListener("click", () => goIndex(state.focusIndex + 1));
+el.btnNextUntranslated.addEventListener("click", nextUnfinished);
 
-mExport.onclick = () => {
-  const fn = buildExportFilename();
-  if (!fn) return alert("Project + Chapter name required for export.");
-  downloadText(exportTranslationOnly(), fn);
-};
+el.btnJump.addEventListener("click", openJump);
+el.btnCloseJump.addEventListener("click", closeJump);
+el.jumpBackdrop.addEventListener("click", closeJump);
+el.btnJumpCancel.addEventListener("click", closeJump);
+el.btnJumpGo.addEventListener("click", jumpGo);
+el.jumpInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") jumpGo();
+  if (e.key === "Escape") closeJump();
+});
 
-mGoSetup.onclick = () => {
-  setupPanel.scrollIntoView({behavior:"smooth", block:"start"});
-};
+el.search.addEventListener("input", () => renderList(true));
+el.filter.addEventListener("change", () => renderList(true));
+el.btnLoadMore.addEventListener("click", () => renderList(false));
 
-// Glossary actions
-btnAddGloss.onclick = () => {
-  const k = (glossKeyEl.value || "").trim();
-  const v = (glossValEl.value || "").trim();
-  if (!k || !v) return alert("Enter both term and translation.");
-  model.glossary[k] = v;
-  glossKeyEl.value = ""; glossValEl.value = "";
-  saveState();
-  renderGlossary();
-  renderUI();
-};
+el.toTop.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+window.addEventListener("scroll", () => updateTopVisibility(false));
 
-glossSearchEl.addEventListener("input", renderGlossary);
+el.btnTheme.addEventListener("click", () => {
+  state.prefs.theme = state.prefs.theme === "light" ? "dark" : "light";
+  applyTheme();
+  markDirty("Theme updated");
+});
+el.autoFocus.addEventListener("change", () => {
+  state.prefs.autoFocus = el.autoFocus.checked;
+  markDirty("Preference saved");
+});
+el.countSkipped.addEventListener("change", () => {
+  state.prefs.countSkipped = el.countSkipped.checked;
+  updateProgress();
+  markDirty("Preference saved");
+});
 
-btnExportGlossary.onclick = () => downloadJSON({ glossary: model.glossary || {}, exportedAt: new Date().toISOString() },
-  `${normalizeFilename(projectNameEl.value||"glossary")}.glossary.json`);
+el.fontSize.addEventListener("change", () => {
+  state.prefs.editorSize = Number(el.fontSize.value) || 17;
+  applyEditorSize();
+  markDirty("Font size saved");
+});
 
-btnImportGlossary.onclick = () => hiddenGlossaryImport.click();
-hiddenGlossaryImport.addEventListener("change", (e) => {
-  const file = e.target.files?.[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const pack = safeParseJSON(reader.result);
-    const g = pack?.glossary;
-    if (!g || typeof g !== "object") return alert("Invalid glossary file.");
-    model.glossary = { ...(model.glossary||{}), ...g };
-    saveState();
-    renderGlossary();
-    renderUI();
+el.btnExport.addEventListener("click", () => {
+  const payload = JSON.stringify({ ...state, schemaVersion: SCHEMA_VERSION }, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  const safeName = (state.project.fileName || "chaptercraft").replace(/[^\w.-]+/g, "_");
+  a.download = `${safeName}.project.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  setStatus("Exported ✓");
+});
+
+el.btnImport.addEventListener("click", () => {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "application/json";
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const txt = await file.text();
+    try{
+      const parsed = JSON.parse(txt);
+      const migrated = migrateIfNeeded(parsed);
+      if (!migrated) throw new Error("bad");
+
+      // apply
+      Object.assign(state, migrated);
+      if (!state.prefs) state.prefs = { theme:"dark", autoFocus:true, countSkipped:true, editorSize:17 };
+      if (!state.project) state.project = { projectName:"", fileName:"", splitMode:"blanklines", createdAt:"", updatedAt:"", paragraphs:[], translations:[], skipped:[] };
+      if (!state.list) state.list = { cursor: 0 };
+      ensureArrays();
+
+      // sync UI
+      el.projectName.value = state.project.projectName || "";
+      el.fileName.value = state.project.fileName || "";
+      el.splitMode.value = state.project.splitMode || "blanklines";
+      el.fontSize.value = String(state.prefs.editorSize || 17);
+      el.autoFocus.checked = !!state.prefs.autoFocus;
+      el.countSkipped.checked = state.prefs.countSkipped !== false;
+
+      applyTheme();
+      applyEditorSize();
+      updateMeta();
+      updateProgress();
+      setView(state.view === "list" ? "list" : "focus");
+      saveToStorage();
+      setStatus("Imported ✓");
+      closeDrawer();
+    }catch{
+      setStatus("Import failed (invalid file)");
+    }
   };
-  reader.readAsText(file);
+  input.click();
 });
 
-btnClearGlossary.onclick = () => {
-  if (!confirm("Clear glossary?")) return;
-  model.glossary = {};
-  saveState();
-  renderGlossary();
-  renderUI();
-};
-
-// Backups actions
-btnMakeBackup.onclick = () => makeSnapshot();
-btnDownloadProjectJson.onclick = () => downloadJSON(exportProjectPack(), `${normalizeFilename(projectNameEl.value||"project")}.project.json`);
-hiddenProjectImport.addEventListener("change", (e) => {
-  const file = e.target.files?.[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const pack = safeParseJSON(reader.result);
-    if (!pack?.snapshot) return alert("Invalid project file.");
-    loadSnapshot(pack.snapshot);
-    makeSnapshot();
-  };
-  reader.readAsText(file);
+el.btnReset.addEventListener("click", () => {
+  const ok = confirm("Reset will delete ALL local data for this app. Continue?");
+  if (!ok) return;
+  localStorage.removeItem(STORAGE_KEY);
+  location.reload();
 });
 
-// Keyboard shortcuts (desktop)
+el.btnCopyAllCompleted.addEventListener("click", async () => {
+  if (!isLoaded()) return;
+  const lines = [];
+  for (let i=0;i<state.project.paragraphs.length;i++){
+    if (!isCompleted(i)) continue;
+    const t = (state.project.translations[i] || "").trim();
+    // If skipped but empty, include a marker so it’s not silently lost
+    if (t){
+      lines.push(`[#${i+1}]\n${t}\n`);
+    } else if (state.project.skipped[i]) {
+      lines.push(`[#${i+1}] (skipped)\n`);
+    }
+  }
+  await copyText(lines.join("\n"));
+});
+
+// Global ESC to close overlays
 document.addEventListener("keydown", (e) => {
-  if (resolvedMode() !== "desktop") return;
+  if (e.key === "Escape"){
+    if (el.jumpSheet.getAttribute("aria-hidden") === "false") closeJump();
+    if (el.toolsDrawer.getAttribute("aria-hidden") === "false") closeDrawer();
+  }
 
-  const key = e.key.toLowerCase();
-  if (e.ctrlKey && key === "s"){
-    e.preventDefault();
-    btnExportTxt.click();
-  }
-  if (e.ctrlKey && e.key === "Enter"){
-    const p = model.paragraphs[currentIndex];
-    if (!p) return;
-    p.done = true; p.skipped = false;
-    saveState(); updateProgress(); renderDesktop();
-    if (toggleAutoAdvanceEl.checked){
-      const nxt = nextIndexFrom(currentIndex, +1);
-      if (nxt !== -1) { currentIndex = nxt; saveState(); scrollToCard(nxt); }
-    }
-  }
+  // Keyboard navigation in Focus (when NOT typing)
+  const typing = ["INPUT", "TEXTAREA"].includes((document.activeElement?.tagName || ""));
+  if (typing) return;
+
+  if (e.key === "j" || e.key === "ArrowRight") goIndex(state.focusIndex + 1);
+  if (e.key === "k" || e.key === "ArrowLeft") goIndex(state.focusIndex - 1);
 });
 
-// Auto-backup timer
-let autoBackupTimer = null;
-function startAutoBackup(){
-  if (autoBackupTimer) clearInterval(autoBackupTimer);
-  autoBackupTimer = setInterval(() => {
-    if (!toggleAutoBackupEl.checked) return;
-    if (!model.paragraphs.length) return;
-    makeSnapshot();
-  }, AUTO_BACKUP_MS);
+// ---------- Init ----------
+function syncControlsFromState(){
+  el.projectName.value = state.project.projectName || "";
+  el.fileName.value = state.project.fileName || "";
+  el.splitMode.value = state.project.splitMode || "blanklines";
+  el.fontSize.value = String(state.prefs.editorSize || 17);
+  el.autoFocus.checked = !!state.prefs.autoFocus;
+  el.countSkipped.checked = state.prefs.countSkipped !== false;
 }
 
-// Export Project Pack
-function exportProjectPack(){
-  return {
-    version: "chaptercraft_combined_v1",
-    exportedAt: new Date().toISOString(),
-    snapshot: {
-      theme: model.theme,
-      projectName: projectNameEl.value || "",
-      chapterName: chapterNameEl.value || "",
-      ui: {
-        autoAdvance: !!toggleAutoAdvanceEl.checked,
-        dialogueTools: !!toggleDialogueToolsEl.checked,
-        autoBackup: !!toggleAutoBackupEl.checked
-      },
-      glossary: model.glossary || {},
-      rawText: rawTextEl.value || "",
-      paragraphs: model.paragraphs || [],
-      currentIndex
-    }
-  };
-}
+function init(){
+  loadFromStorage();
+  ensureArrays();
 
-// ---------- Boot ----------
-loadState();
-setModeButtonLabel();
-startAutoBackup();
-renderGlossary();
-renderBackups();
-renderUI();
-updateBackToTopVisibility();
+  applyTheme();
+  applyEditorSize();
+  syncControlsFromState();
+
+  updateKeyboardOffset();
+  updateMeta();
+  updateProgress();
+
+  setStatus(isLoaded() ? "Saved ✓" : "Ready");
+  setView(state.view === "list" ? "list" : "focus");
+  saveToStorage();
+
+  // Improve mobile caret visibility when keyboard changes
+  if (window.visualViewport){
+    window.visualViewport.addEventListener("resize", () => {
+      updateKeyboardOffset();
+      ensureEditorVisible();
+    });
+  }
+}
+init();
