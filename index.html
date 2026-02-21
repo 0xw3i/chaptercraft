@@ -1,184 +1,268 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ChapterCraft</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+  <meta name="color-scheme" content="dark light" />
+  <title>ChapterCraft — Translator Workspace</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <a class="skiplink" href="#main">Skip to content</a>
 
-  <!-- Sticky Header -->
-  <header class="topbar">
-    <div class="brand">ChapterCraft</div>
-
-    <div class="header-progress">
-      <div class="progress-row">
-        <div class="progress-bar">
-          <div id="progressFillTop"></div>
+  <!-- Top App Bar -->
+  <header class="appbar" role="banner">
+    <div class="appbar__left">
+      <div class="brand" aria-label="ChapterCraft">
+        <div class="brand__mark" aria-hidden="true">CC</div>
+        <div class="brand__text">
+          <div class="brand__name">ChapterCraft</div>
+          <div class="brand__meta" id="projectMeta">No project</div>
         </div>
-        <div id="progressTextTop" class="progress-text">0 / 0</div>
       </div>
     </div>
 
-    <div class="top-actions">
-      <button id="modeToggle" class="btn">Mobile: Auto</button>
-      <button id="themeToggle" class="btn" title="Theme">🌙</button>
-      <button id="btnTools" class="btn" aria-expanded="false">Tools ▾</button>
-
-      <div id="toolsMenu" class="menu-pop" aria-hidden="true">
-        <button class="menu-item" id="btnGlossary">Glossary</button>
-        <button class="menu-item" id="btnBackups">Backups</button>
-        <button class="menu-item" id="btnCheck">Check</button>
-        <div class="menu-sep"></div>
-        <button class="menu-item" id="btnExportProject">Export Project JSON</button>
-        <button class="menu-item" id="btnImportProject">Import Project JSON</button>
+    <div class="appbar__center">
+      <div class="progress">
+        <div class="progress__row" aria-label="Progress">
+          <div class="progress__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="progress__fill" id="progressFill" style="width:0%"></div>
+          </div>
+          <div class="progress__text" id="progressText">0 / 0 (0%)</div>
+        </div>
+        <div class="status" id="saveStatus" aria-live="polite">Ready</div>
       </div>
+    </div>
+
+    <div class="appbar__right">
+      <button class="iconbtn" id="btnToggleView" type="button" title="Toggle view">
+        <span id="viewLabel">Focus</span>
+      </button>
+      <button class="iconbtn" id="btnOpenTools" type="button" aria-haspopup="dialog" aria-controls="toolsDrawer">
+        Tools
+      </button>
     </div>
   </header>
 
-  <!-- SETUP (shared) -->
-  <section class="panel" id="setupPanel">
-    <div class="panel-head">
-      <div class="panel-title">Setup</div>
-      <div class="panel-tools">
-        <label class="btn" for="fileInput">Upload .txt</label>
-        <input id="fileInput" type="file" accept=".txt,text/plain" hidden />
-        <button id="btnSplit" class="btn primary">Split & Start</button>
-        <button id="btnClearAll" class="btn danger">Clear All</button>
-      </div>
-    </div>
-
-    <div class="setup-grid">
-      <div class="field">
-        <label>Project Name (required for export)</label>
-        <input id="projectName" class="input" placeholder="e.g. MartialGod" />
-      </div>
-      <div class="field">
-        <label>Chapter Name (required for export)</label>
-        <input id="chapterName" class="input" placeholder="e.g. Chapter 012" />
-      </div>
-    </div>
-
-    <textarea id="rawText" class="textarea" placeholder="Paste chapter text here... Paragraphs should be separated by blank lines."></textarea>
-
-    <div class="meta">
-      <label class="chk"><input type="checkbox" id="toggleAutoAdvance" checked> Auto-advance</label>
-      <label class="chk"><input type="checkbox" id="toggleDialogueTools" checked> Highlight dialogue</label>
-      <label class="chk"><input type="checkbox" id="toggleAutoBackup" checked> Auto backups</label>
-      <span class="hint">Tip: On mobile, use Focus flow automatically.</span>
-    </div>
-  </section>
-
-  <!-- DESKTOP WORKSPACE -->
-  <section id="desktopScreen" class="screen">
-    <div class="toolbar">
-      <input id="searchBox" class="input" placeholder="Search original/translation..." />
-      <select id="filterMode" class="input">
-        <option value="untranslated">Untranslated</option>
-        <option value="done">Done</option>
-        <option value="skipped">Skipped</option>
-        <option value="dialogue">Dialogue</option>
-        <option value="all">All</option>
-      </select>
-
-      <button id="btnPrev" class="btn">Prev</button>
-      <button id="btnNext" class="btn">Next</button>
-      <button id="btnFocus" class="btn">Focus</button>
-
-      <button id="btnExportTxt" class="btn primary">Export .txt</button>
-      <button id="btnExportReview" class="btn">Export Review</button>
-    </div>
-
-    <div id="paragraphs" class="cards"></div>
-  </section>
-
-  <!-- MOBILE TRANSLATION FLOW -->
-  <section id="mobileScreen" class="screen">
-    <div class="mobile-wrap">
-      <div class="mobile-original" id="mOriginal"></div>
-      <textarea id="mTranslation" class="mobile-translation" placeholder="Translate here..."></textarea>
-
-      <div class="mobile-nav">
-        <button id="mPrev" class="btn">← Prev</button>
-        <button id="mSkip" class="btn danger">Skip</button>
-        <button id="mDone" class="btn primary">Done</button>
-        <button id="mNext" class="btn">Next →</button>
+  <!-- Main -->
+  <main class="shell" id="main">
+    <!-- Setup -->
+    <section class="card" id="setupCard">
+      <div class="card__head">
+        <h1 class="card__title">Project Setup</h1>
+        <div class="chip" id="setupChip">Not loaded</div>
       </div>
 
-      <div class="mobile-mini">
-        <button id="mExport" class="btn">Export</button>
-        <button id="mGoSetup" class="btn">Setup</button>
+      <div class="grid">
+        <div class="field">
+          <label for="projectName">Project name</label>
+          <input class="input" id="projectName" autocomplete="off" placeholder="e.g. Novel Name — Volume 2" />
+        </div>
+
+        <div class="field">
+          <label for="fileName">File name (required)</label>
+          <input class="input" id="fileName" autocomplete="off" placeholder="e.g. chapter_064.txt" />
+        </div>
+
+        <div class="field">
+          <label for="splitMode">Split by</label>
+          <select class="input" id="splitMode">
+            <option value="blanklines" selected>Blank lines (recommended)</option>
+            <option value="lines">Every line</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="fontSize">Editor font</label>
+          <select class="input" id="fontSize">
+            <option value="15">15</option>
+            <option value="16">16</option>
+            <option value="17" selected>17</option>
+            <option value="18">18</option>
+            <option value="19">19</option>
+          </select>
+        </div>
       </div>
-    </div>
-  </section>
 
-  <!-- Back to Top -->
-  <button id="backToTop" class="back-to-top" aria-hidden="true" title="Back to top">↑</button>
+      <div class="area">
+        <label class="area__label" for="rawText">Paste original text</label>
+        <textarea class="textarea textarea--tall" id="rawText" placeholder="Paste chapter text here..."></textarea>
+        <div class="hint">
+          Tip: Keep paragraphs separated by blank lines for the cleanest splitting.
+        </div>
+      </div>
 
-  <!-- Drawers -->
-  <div class="drawer" id="drawerGlossary" aria-hidden="true">
-    <div class="drawer-card">
-      <div class="drawer-head">
+      <div class="row">
+        <button class="btn btn--primary" id="btnLoad" type="button">Load & Start</button>
+        <button class="btn" id="btnClearSetup" type="button">Clear Setup Fields</button>
+      </div>
+    </section>
+
+    <!-- Focus Mode -->
+    <section class="workspace" id="focusView" aria-label="Focus mode">
+      <div class="focus">
+        <div class="focus__top">
+          <div class="focus__index" id="focusIndex">Index 0 / 0</div>
+          <div class="focus__flags">
+            <span class="pill" id="pillStatus">untranslated</span>
+          </div>
+        </div>
+
+        <div class="split">
+          <article class="pane" aria-label="Original text">
+            <div class="pane__label">Original</div>
+            <div class="pane__body" id="focusOriginal">Paste text in setup to begin.</div>
+          </article>
+
+          <section class="pane" aria-label="Translation editor">
+            <div class="pane__label">Your translation</div>
+            <textarea
+              class="textarea textarea--editor"
+              id="focusEditor"
+              placeholder="Type translation here..."
+              autocapitalize="sentences"
+              autocomplete="off"
+              spellcheck="true"
+            ></textarea>
+
+            <div class="minirow">
+              <button class="btn btn--ghost" id="btnCopyOriginal" type="button">Copy original</button>
+              <button class="btn btn--ghost" id="btnCopyTranslation" type="button">Copy translation</button>
+              <div class="spacer"></div>
+              <button class="btn btn--danger" id="btnClearOne" type="button">Clear</button>
+              <button class="btn" id="btnSkipOne" type="button">Skip</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- List Mode -->
+    <section class="workspace" id="listView" aria-label="List mode" hidden>
+      <div class="listhead">
+        <div class="listhead__left">
+          <div class="listhead__title">List view</div>
+          <div class="listhead__sub">Search + filter + jump editing</div>
+        </div>
+        <div class="listhead__right">
+          <input class="input input--search" id="search" placeholder="Search original or translation…" />
+          <select class="input input--small" id="filter">
+            <option value="all">All</option>
+            <option value="untranslated">Untranslated</option>
+            <option value="done">Done</option>
+            <option value="skipped">Skipped</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="list" id="list"></div>
+
+      <div class="listfoot">
+        <button class="btn" id="btnLoadMore" type="button">Load more</button>
+        <div class="hint" id="listFootHint"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Action Bar -->
+  <nav class="bottombar" aria-label="Actions">
+    <button class="barbtn" id="btnPrev" type="button" title="Previous (K / ←)">← Prev</button>
+    <button class="barbtn barbtn--soft" id="btnJump" type="button" title="Jump to index">Jump</button>
+    <button class="barbtn barbtn--soft" id="btnNextUntranslated" type="button" title="Next unfinished">Next Unfinished</button>
+    <button class="barbtn barbtn--primary" id="btnNext" type="button" title="Next (J / →)">Next →</button>
+  </nav>
+
+  <!-- Tools Drawer -->
+  <aside class="drawer" id="toolsDrawer" aria-hidden="true">
+    <div class="drawer__panel" role="dialog" aria-modal="true" aria-label="Tools">
+      <div class="drawer__head">
         <div>
-          <div class="drawer-title">Glossary</div>
-          <div class="drawer-sub">Store names/terms for consistency.</div>
+          <div class="drawer__title">Tools</div>
+          <div class="drawer__sub">Import/export, preferences, utilities</div>
         </div>
-        <button class="btn" id="btnCloseGlossary">✕</button>
+        <button class="iconbtn" id="btnCloseTools" type="button" aria-label="Close tools">✕</button>
       </div>
-      <div class="drawer-body">
-        <div class="row">
-          <input id="glossKey" class="input grow" placeholder="Original term" />
-          <input id="glossVal" class="input grow" placeholder="Your translation" />
-          <button id="btnAddGloss" class="btn primary">Add</button>
+
+      <div class="drawer__body">
+        <div class="section">
+          <div class="section__title">Project</div>
+          <div class="stack">
+            <button class="btn" id="btnExport" type="button">Export project (JSON)</button>
+            <button class="btn" id="btnImport" type="button">Import project (JSON)</button>
+            <button class="btn btn--danger" id="btnReset" type="button">Reset (delete local data)</button>
+          </div>
         </div>
-        <div class="row">
-          <input id="glossSearch" class="input grow" placeholder="Search glossary..." />
-          <button id="btnExportGlossary" class="btn">Export</button>
-          <button id="btnImportGlossary" class="btn">Import</button>
-          <button id="btnClearGlossary" class="btn danger">Clear</button>
-          <input id="hiddenGlossaryImport" type="file" accept="application/json" hidden />
+
+        <div class="section">
+          <div class="section__title">Preferences</div>
+          <div class="stack">
+            <div class="prefrow">
+              <span>Theme</span>
+              <button class="btn btn--ghost" id="btnTheme" type="button">Toggle</button>
+            </div>
+            <div class="prefrow">
+              <span>Auto focus editor</span>
+              <label class="switch">
+                <input type="checkbox" id="autoFocus" />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="prefrow">
+              <span>Progress counts “Skipped”</span>
+              <label class="switch">
+                <input type="checkbox" id="countSkipped" />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
         </div>
-        <div id="glossList" class="list"></div>
+
+        <div class="section">
+          <div class="section__title">Clipboard</div>
+          <div class="stack">
+            <button class="btn" id="btnCopyAllCompleted" type="button">Copy all completed translations</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="drawer__foot">
+        <div class="drawer__footnote">Autosaves locally. No backend.</div>
       </div>
     </div>
-  </div>
+    <div class="drawer__backdrop" id="drawerBackdrop"></div>
+  </aside>
 
-  <div class="drawer" id="drawerBackups" aria-hidden="true">
-    <div class="drawer-card">
-      <div class="drawer-head">
+  <!-- Jump Sheet -->
+  <aside class="sheet" id="jumpSheet" aria-hidden="true">
+    <div class="sheet__panel" role="dialog" aria-modal="true" aria-label="Jump to index">
+      <div class="sheet__head">
         <div>
-          <div class="drawer-title">Backups</div>
-          <div class="drawer-sub">Snapshots stored locally. Export project often.</div>
+          <div class="sheet__title">Jump to index</div>
+          <div class="sheet__sub" id="jumpSub">Enter a number.</div>
         </div>
-        <button class="btn" id="btnCloseBackups">✕</button>
+        <button class="iconbtn" id="btnCloseJump" type="button" aria-label="Close jump">✕</button>
       </div>
-      <div class="drawer-body">
+
+      <div class="sheet__body">
+        <label class="field">
+          <span class="field__label">Index</span>
+          <input class="input" id="jumpInput" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 64" />
+        </label>
         <div class="row">
-          <button id="btnMakeBackup" class="btn primary">Make Snapshot</button>
-          <button id="btnDownloadProjectJson" class="btn">Download Project JSON</button>
+          <button class="btn" id="btnJumpCancel" type="button">Cancel</button>
+          <div class="spacer"></div>
+          <button class="btn btn--primary" id="btnJumpGo" type="button">Go</button>
         </div>
-        <div id="backupList" class="list"></div>
       </div>
     </div>
-  </div>
+    <div class="sheet__backdrop" id="jumpBackdrop"></div>
+  </aside>
 
-  <div class="drawer" id="drawerCheck" aria-hidden="true">
-    <div class="drawer-card">
-      <div class="drawer-head">
-        <div>
-          <div class="drawer-title">Check</div>
-          <div class="drawer-sub">Quick consistency overview.</div>
-        </div>
-        <button class="btn" id="btnCloseCheck">✕</button>
-      </div>
-      <div class="drawer-body">
-        <div id="checkReport" class="list"></div>
-      </div>
-    </div>
-  </div>
-
-  <input id="hiddenProjectImport" type="file" accept="application/json" hidden />
+  <!-- Back to top (List only) -->
+  <button class="toTop" id="toTop" aria-hidden="true" title="Back to top">↑</button>
 
   <script src="script.js"></script>
 </body>
